@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cycle Timer</title>
+<script>
+  // Apply saved theme before first paint to avoid a flash.
+  try {
+    const t = localStorage.getItem('theme');
+    if (t) document.documentElement.dataset.theme = t;
+  } catch (e) {}
+</script>
+<style>
+  :root {
+    --bg: #f5f5f4;
+    --fg: #1c1917;
+    --muted: #78716c;
+    --btn: #e7e5e4;
+    --btn-fg: #1c1917;
+    --accent: #16a34a;
+    --accent-fg: #ffffff;
+    --stop: #dc2626;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0c0a09;
+      --fg: #fafaf9;
+      --muted: #a8a29e;
+      --btn: #292524;
+      --btn-fg: #fafaf9;
+      --accent: #22c55e;
+      --accent-fg: #052e16;
+      --stop: #ef4444;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0c0a09;
+    --fg: #fafaf9;
+    --muted: #a8a29e;
+    --btn: #292524;
+    --btn-fg: #fafaf9;
+    --accent: #22c55e;
+    --accent-fg: #052e16;
+    --stop: #ef4444;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: system-ui, -apple-system, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 24px;
+    padding: 16px;
+    min-height: 100dvh;
+  }
+  #theme {
+    position: fixed;
+    top: 12px;
+    right: 12px;
+    width: 44px;
+    height: 44px;
+    border: none;
+    border-radius: 50%;
+    background: var(--btn);
+    color: var(--btn-fg);
+    font-size: 22px;
+    cursor: pointer;
+  }
+  #time {
+    font-size: min(32vw, 200px);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+  }
+  #round {
+    font-size: 28px;
+    color: var(--muted);
+    min-height: 1.2em;
+  }
+  #durations {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    width: 100%;
+    max-width: 480px;
+  }
+  button.dur, #stop {
+    height: 72px;
+    border: none;
+    border-radius: 16px;
+    font-size: 22px;
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+    background: var(--btn);
+    color: var(--btn-fg);
+  }
+  button.dur.active {
+    background: var(--accent);
+    color: var(--accent-fg);
+  }
+  #stop {
+    width: 100%;
+    max-width: 480px;
+    background: var(--stop);
+    color: #ffffff;
+  }
+</style>
+</head>
+<body>
+<button id="theme" aria-label="Toggle theme"></button>
+<div id="time">00:00</div>
+<div id="round">Round 0</div>
+<div id="durations"></div>
+<button id="stop">Stop</button>
+
+<script>
+  const DURATIONS_MIN = [1, 2, 3, 4, 5, 8, 10];
+
+  const timeEl = document.getElementById('time');
+  const roundEl = document.getElementById('round');
+  const durationsEl = document.getElementById('durations');
+  const stopEl = document.getElementById('stop');
+  const themeEl = document.getElementById('theme');
+
+  let durationMs = 0;
+  let cycleStart = 0;
+  let round = 0;
+  let tickId = null;
+  let audioCtx = null;
+  let wakeLock = null;
+
+  // --- Signal: the single place to change how the end of an interval sounds.
+  function playSignal() {
+    if (!audioCtx) return;
+    const t = audioCtx.currentTime;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.frequency.value = 880;
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(0.6, t + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.25);
+    osc.connect(gain).connect(audioCtx.destination);
+    osc.start(t);
+    osc.stop(t + 0.3);
+  }
+
+  function format(ms) {
+    const s = Math.ceil(ms / 1000);
+    return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
+  }
+
+  function render(remainingMs) {
+    timeEl.textContent = format(remainingMs);
+    roundEl.textContent = 'Round ' + round;
+  }
+
+  function tick() {
+    const elapsed = Date.now() - cycleStart;
+    if (elapsed >= durationMs) {
+      const done = Math.floor(elapsed / durationMs);
+      round += done;
+      cycleStart += done * durationMs;
+      playSignal();
+    }
+    render(durationMs - (Date.now() - cycleStart));
+  }
+
+  async function requestWakeLock() {
+    try {
+      wakeLock = await navigator.wakeLock?.request('screen');
+    } catch (e) {}
+  }
+
+  function start(minutes, button) {
+    if (!audioCtx) audioCtx = new AudioContext();
+    audioCtx.resume();
+
+    clearInterval(tickId);
+    durationMs = minutes * 60 * 1000;
+    cycleStart = Date.now();
+    round = 1;
+    tickId = setInterval(tick, 200);
+    render(durationMs);
+
+    document.querySelectorAll('button.dur').forEach(b => b.classList.toggle('active', b === button));
+    if (!wakeLock) requestWakeLock();
+  }
+
+  function stop() {
+    clearInterval(tickId);
+    tickId = null;
+    round = 0;
+    render(0);
+    document.querySelectorAll('button.dur').forEach(b => b.classList.remove('active'));
+    wakeLock?.release();
+    wakeLock = null;
+  }
+
+  DURATIONS_MIN.forEach(m => {
+    const b = document.createElement('button');
+    b.className = 'dur';
+    b.textContent = m + ' min';
+    b.addEventListener('click', () => start(m, b));
+    durationsEl.appendChild(b);
+  });
+  stopEl.addEventListener('click', stop);
+
+  // The browser drops the wake lock when the tab is hidden; take it back on return.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && tickId) requestWakeLock();
+  });
+
+  // --- Theme
+  function currentTheme() {
+    return document.documentElement.dataset.theme
+      || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  }
+  function renderThemeIcon() {
+    themeEl.textContent = currentTheme() === 'dark' ? '☀' : '☾';
+  }
+  themeEl.addEventListener('click', () => {
+    const next = currentTheme() === 'dark' ? 'light' : 'dark';
+    document.documentElement.dataset.theme = next;
+    try { localStorage.setItem('theme', next); } catch (e) {}
+    renderThemeIcon();
+  });
+  renderThemeIcon();
+</script>
+</body>
+</html>
