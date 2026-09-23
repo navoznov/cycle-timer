@@ -155,6 +155,20 @@
     }
   }
 
+  // Blink the background three times by briefly switching to the opposite theme.
+  function flashSignal() {
+    const root = document.documentElement;
+    const original = root.dataset.theme;
+    const inverted = currentTheme() === 'dark' ? 'light' : 'dark';
+    for (let i = 0; i < 6; i++) {
+      setTimeout(() => {
+        if (i % 2 === 0) root.dataset.theme = inverted;
+        else if (original) root.dataset.theme = original;
+        else delete root.dataset.theme;
+      }, i * 200);
+    }
+  }
+
   function format(ms) {
     const s = Math.ceil(ms / 1000);
     return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
@@ -172,6 +186,7 @@
       round += done;
       cycleStart += done * durationMs;
       playSignal();
+      flashSignal();
     }
     render(durationMs - (Date.now() - cycleStart));
   }
