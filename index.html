@@ -174,9 +174,12 @@
     render(durationMs - (Date.now() - cycleStart));
   }
 
+  // Keep the screen awake for as long as the page is open.
   async function requestWakeLock() {
+    if (wakeLock || document.visibilityState !== 'visible') return;
     try {
       wakeLock = await navigator.wakeLock?.request('screen');
+      wakeLock?.addEventListener('release', () => { wakeLock = null; });
     } catch (e) {}
   }
 
@@ -192,7 +195,6 @@
     render(durationMs);
 
     document.querySelectorAll('button.dur').forEach(b => b.classList.toggle('active', b === button));
-    if (!wakeLock) requestWakeLock();
   }
 
   function stop() {
@@ -201,8 +203,6 @@
     round = 0;
     render(0);
     document.querySelectorAll('button.dur').forEach(b => b.classList.remove('active'));
-    wakeLock?.release();
-    wakeLock = null;
   }
 
   DURATIONS_MIN.forEach(m => {
@@ -215,9 +215,10 @@
   stopEl.addEventListener('click', stop);
 
   // The browser drops the wake lock when the tab is hidden; take it back on return.
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && tickId) requestWakeLock();
-  });
+  // Some browsers only grant it after a user gesture, so retry on any tap too.
+  document.addEventListener('visibilitychange', requestWakeLock);
+  document.addEventListener('pointerdown', requestWakeLock);
+  requestWakeLock();
 
   // --- Theme
   function currentTheme() {
