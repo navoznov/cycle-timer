@@ -61,10 +61,15 @@
     padding: 16px;
     min-height: 100dvh;
   }
-  #theme {
+  #controls {
     position: fixed;
     top: 12px;
     right: 12px;
+    display: flex;
+    gap: 8px;
+  }
+  #controls button {
+    position: relative;
     width: 44px;
     height: 44px;
     border: none;
@@ -73,6 +78,16 @@
     color: var(--btn-fg);
     font-size: 22px;
     cursor: pointer;
+  }
+  #controls button[aria-pressed="false"] { opacity: 0.5; }
+  #controls button[aria-pressed="false"]::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 20%;
+    height: 60%;
+    border-left: 2px solid currentColor;
+    transform: rotate(45deg);
   }
   #time {
     font-size: min(32vw, 200px);
@@ -116,7 +131,11 @@
 </style>
 </head>
 <body>
-<button id="theme" aria-label="Toggle theme"></button>
+<div id="controls">
+  <button id="sound" aria-label="Sound signal">♪</button>
+  <button id="flash" aria-label="Flash signal">✺</button>
+  <button id="theme" aria-label="Toggle theme"></button>
+</div>
 <div id="time">00:00</div>
 <div id="round">Round 0</div>
 <div id="durations"></div>
@@ -130,6 +149,8 @@
   const durationsEl = document.getElementById('durations');
   const stopEl = document.getElementById('stop');
   const themeEl = document.getElementById('theme');
+  const soundEl = document.getElementById('sound');
+  const flashEl = document.getElementById('flash');
 
   let durationMs = 0;
   let cycleStart = 0;
@@ -185,8 +206,8 @@
       const done = Math.floor(elapsed / durationMs);
       round += done;
       cycleStart += done * durationMs;
-      playSignal();
-      flashSignal();
+      if (soundEl.getAttribute('aria-pressed') === 'true') playSignal();
+      if (flashEl.getAttribute('aria-pressed') === 'true') flashSignal();
     }
     render(durationMs - (Date.now() - cycleStart));
   }
@@ -252,6 +273,18 @@
     renderThemeIcon();
   });
   renderThemeIcon();
+
+  // --- Signal toggles: on by default, persisted like the theme.
+  [soundEl, flashEl].forEach(el => {
+    let on = true;
+    try { on = localStorage.getItem(el.id) !== 'off'; } catch (e) {}
+    el.setAttribute('aria-pressed', on);
+    el.addEventListener('click', () => {
+      const next = el.getAttribute('aria-pressed') !== 'true';
+      el.setAttribute('aria-pressed', next);
+      try { localStorage.setItem(el.id, next ? 'on' : 'off'); } catch (e) {}
+    });
+  });
 </script>
 </body>
 </html>
